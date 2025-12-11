@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fantasy Football Player Picker (Fuzzy Logic)</title>
+
+    <link rel="stylesheet" href=""> <script src="https://cdn.tailwindcss.com"></script> <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Roboto:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom CSS definitions not handled by Tailwind */
+        .font-header {
+            font-family: 'Oswald', sans-serif; /* Applied to main titles/headers */
+        }
+        .font-body {
+            font-family: 'Roboto', sans-serif; /* Applied to paragraph text and body */
+        }
+
+        /* Styles for the loading indicator */
+        .spinner {
+            /* Creates a simple, white spinning circle using border properties */
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #ffffff;
+            border-radius: 50%;
+            width: 1.5rem;
+            height: 1.5rem;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 dark:bg-black font-body antialiased transition-colors duration-300 text-gray-200">
+    <div class="container mx-auto p-8">
+
+        <header class="text-center mb-12">
+            <h1 class="font-header text-6xl font-extrabold mb-4 text-white md:text-7xl">GridironGuess</h1>
+            <p class="text-yellow-400 text-xl font-bold">Fuzzy Logic Analysis for Your Next Fantasy Pick</p>
+        </header>
+
+        <section class="bg-gray-800 p-8 rounded-2xl shadow-2xl shadow-yellow-800/20">
+            <h2 class="font-header text-3xl font-semibold mb-6 text-white">Player/Team Lookup</h2>
+
+            <form id="preferences-form" class="space-y-8">
+
+                <div>
+                    <label for="player-input" class="text-lg text-gray-300 mb-2 block">
+                        Enter Player Name or Team (e.g., Patrick Mahomes or Chiefs):
+                    </label>
+                    <input type="text"
+                           id="player-input"
+                           name="player_or_team"
+                           placeholder="e.g., Puka Nacua"
+                           class="w-full p-4 border border-gray-600 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 bg-gray-700 text-white text-lg"
+                           required>
+                    <p class="text-sm text-gray-400 mt-2">
+                        *This will trigger the fuzzy logic calculation in the backend.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="text-lg text-gray-300 mb-2 block">
+                        Select Football Week and Year for Analysis:
+                    </label>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="week-input" class="text-sm text-gray-400 mb-1 block">Week Number (1-18)</label>
+                            <input type="number" id="week-input" name="analysis_week"
+                                   value="15"
+                                   min="1" max="18"
+                                   placeholder="e.g., 15"
+                                   class="w-full p-4 border border-gray-600 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 bg-gray-700 text-white text-lg"
+                                   required>
+                        </div>
+
+                        <div>
+                            <label for="year-input" class="text-sm text-gray-400 mb-1 block">Year</label>
+                            <input type="number" id="year-input" name="analysis_year"
+                                   value="2023"
+                                   min="2010" max="2025"
+                                   placeholder="e.g., 2023"
+                                   class="w-full p-4 border border-gray-600 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 bg-gray-700 text-white text-lg"
+                                   required>
+                        </div>
+                    </div>
+
+                    <p class="text-sm text-gray-400 mt-2">
+                        *The NFL regular season runs roughly from Week 1 to Week 18.
+                    </p>
+                </div>
+
+                <button type="submit"
+                        id="submit-button"
+                        class="w-full py-4 bg-yellow-600 text-lg font-bold rounded-lg hover:bg-yellow-700 transition duration-300 text-gray-900 flex items-center justify-center space-x-2"
+                        aria-label="Get Player Recommendation">
+                    <span id="button-text">Analyze Player/Team</span> <span id="spinner" class="spinner hidden"></span> </button>
+
+            </form>
+        </section>
+
+        <section id="recommendations-section" class="hidden">
+            <h2 class="font-header text-3xl font-semibold mt-12 mb-6 text-white text-center">Analysis Results</h2>
+
+            <h3 id="player-list-header" class="font-header text-3xl font-bold mb-4 text-yellow-500">
+                Individual Player Breakdown </h3>
+
+            <div id="player-recommendation-list" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
+                </div>
+
+            <div id="results-container" style="display: none;"
+                 class="bg-gray-800 p-6 sm:p-8 mt-12 rounded-xl shadow-2xl border border-yellow-700/50">
+
+                <div class="mb-6 pb-4 border-b border-gray-700">
+                    <h2 class="font-header text-3xl sm:text-4xl font-extrabold text-white leading-tight">
+                        Analysis for <span id="player-name-display" class="text-yellow-400">--</span>
+                    </h2>
+                    <p class="text-gray-400 text-sm">
+                        Input Data: Week <span id="input-week">--</span>, <span id="input-year">--</span>
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+                    <div class="lg:col-span-1 bg-gray-700 p-6 rounded-lg shadow-lg border-l-4 border-yellow-600">
+                        <h3 class="font-header text-xl font-semibold mb-3 text-gray-200">Recommendation Score</h3>
+
+                        <div class="flex flex-col items-center justify-center space-y-2">
+                            <div class="w-40 h-40 flex items-center justify-center rounded-full bg-yellow-600 shadow-xl border-4 border-yellow-400">
+                                <span id="recommendation-score" class="inline-block ml-5 font-header items-center text-4xl font-extrabold text-gray-900 leading-none">--</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 text-center">
+                            <h3 id="conclusion" class="font-body text-xl font-bold p-2 rounded-md bg-gray-900/50 text-yellow-400">
+                                --
+                            </h3>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2 space-y-4">
+                        <h3 class="font-header text-2xl font-semibold text-white">Fuzzy Input Metrics</h3>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+
+                            <div class="bg-gray-700 p-4 rounded-lg text-center shadow">
+                                <p class="text-xs text-gray-400 uppercase font-bold">Volume</p>
+                                <span id="stat-volume" class="text-2xl font-extrabold text-yellow-500">--</span>
+                                <p class="text-xs text-gray-500">(Carries + Targets)</p>
+                            </div>
+
+                            <div class="bg-gray-700 p-4 rounded-lg text-center shadow">
+                                <p class="text-xs text-gray-400 uppercase font-bold">Yards</p>
+                                <span id="stat-yards" class="text-2xl font-extrabold text-yellow-500">--</span>
+                                <p class="text-xs text-gray-500">(Scrimmage)</p>
+                            </div>
+
+                            <div class="bg-gray-700 p-4 rounded-lg text-center shadow">
+                                <p class="text-xs text-gray-400 uppercase font-bold">Receptions</p>
+                                <span id="stat-receptions" class="text-2xl font-extrabold text-yellow-500">--</span>
+                                <p class="text-xs text-gray-500">(PPR)</p>
+                            </div>
+
+                            <div class="bg-gray-700 p-4 rounded-lg text-center shadow">
+                                <p class="text-xs text-gray-400 uppercase font-bold">Touchdowns</p>
+                                <span id="stat-td" class="text-2xl font-extrabold text-yellow-500">--</span>
+                                <p class="text-xs text-gray-500">(Total TDs)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="error-message" style="color: red; margin-top: 20px;"></div>
+
+        </section>
+
+    </div>
+
+    <script src="static/script.js" defer></script>
+</body>
+</html>
