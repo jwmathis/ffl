@@ -294,6 +294,61 @@ def get_weekly_team_stats(team_input: str, year: int, week: int) -> list[Dict[st
         results_list.append(player_result)
 
     return results_list
+def get_seasonal_player_stats(player_name: str, year: int, week: int) ->Dict[str, Any]:
+    # Define the columns we need for calculation:
+    # player_display_name is used for filtering
+    # rush_attempt, receptions, receiving_yards, rushing_yards, receiving_td, rushing_td
+    cols_to_pull = [
+        'player_display_name', 'recent_team', 'position', 'week', 'carries', 'rushing_yards',
+        'rushing_tds', 'receptions', 'targets', 'receiving_yards', 'receiving_tds'
+    ]
+
+    # 1. Import Seasonal Data
+    try:
+        df = nfl.import_seasonal_data([year], 'REG')
+
+        player_id_df = df[df['player_display_name'] == player_name]
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return {}
+
+    # 2. Filter by Player Name and Week
+    player_data = df[
+        (df['player_display_name'].str.contains(player_name, case=False, na=False)) &
+        (df['week'] == week)
+        ]
+
+    if player_data.empty:
+        print(f"Player '{player_name}' not found for Week {week} or data is missing.")
+        return {}
+
+    # Take the first match if multiple exist (which shouldn't happen with display name)
+    player_stats = player_data.iloc[0]
+
+    # 3. Calculate Fuzzy Inputs
+
+    # 'volume' = Carries + Targets
+    volume_calc = player_stats.get('carries', 0) + player_stats.get('targets', 0)
+
+    # 'yards' = Rushing Yards + Receiving Yards
+    yards_calc = player_stats.get('rushing_yards', 0) + player_stats.get('receiving_yards', 0)
+
+    # 'receptions' = Receptions
+    receptions_calc = player_stats.get('receptions', 0)
+
+    # 'td' = Rushing TDs + Receiving TDs
+    td_calc = player_stats.get('rushing_tds', 0) + player_stats.get('receiving_tds', 0)
+
+    # 4. Return as a dictionary
+    return {
+        'name': player_stats.get('player_display_name'),
+        'team': player_stats.get('recent_team'),
+        'position': player_stats.get('position'),
+        'volume': int(volume_calc),
+        'yards': int(yards_calc),
+        'receptions': int(receptions_calc),
+        'td': int(td_calc),
+    }
 
 def get_weekly_player_stats(player_name: str, year: int, week: int) ->Dict[str, Any]:
     """

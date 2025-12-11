@@ -5,8 +5,8 @@ from fuzzy_data_manager import run_fuzzy_analysis # import fuzzy logic execution
 app = Flask(__name__)
 
 # --- Configuration (Hard set the current NFL season details) ---
-CURRENT_YEAR = 2023
-CURRENT_WEEK = 12
+CURRENT_YEAR = 2025
+CURRENT_WEEK = 15
 
 
 # Route to handle the AJAX POST request from the HTML form
