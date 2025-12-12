@@ -6,7 +6,9 @@ import nflreadpy as nflread
 import pandas as pd
 import polars as pl
 from typing import Dict, Any, Optional
+from itertools import chain
 polars_df = nflread.load_player_stats([2025], "reg")
+df = pd.DataFrame(polars_df)
 
 # --- 1. FUZZY LOGIC SETUP ---
 # Inputs: Player statistics that influence the decision (Antecedents)
@@ -205,57 +207,56 @@ manager_sim = ctrl.ControlSystemSimulation(manager_ctrl)
 # Dictionary mapping common team names/nicknames to their 3-letter abbreviations
 # This makes the user input more flexible (e.g., 'Eagles' or 'PHI')
 TEAM_ABBREVIATIONS = {
-    # --- Official Team Names (Key: Lowercase Name, Value: Abbreviation) ---
-    '49ers': 'SF', 'bears': 'CHI', 'bengals': 'CIN', 'bills': 'BUF', 'broncos': 'DEN',
-    'browns': 'CLE', 'buccaneers': 'TB', 'cardinals': 'ARI', 'chargers': 'LAC',
-    'chiefs': 'KC', 'colts': 'IND', 'cowboys': 'DAL', 'dolphins': 'MIA',
-    'eagles': 'PHI', 'falcons': 'ATL', 'giants': 'NYG', 'jaguars': 'JAX',
-    'jets': 'NYJ', 'lions': 'DET', 'packers': 'GB', 'panthers': 'CAR',
-    'patriots': 'NE', 'raiders': 'LV', 'rams': 'LAR', 'ram': 'LAR', 'ravens': 'BAL',
-    'saints': 'NO', 'seahawks': 'SEA', 'steelers': 'PIT', 'texans': 'HOU',
-    'titans': 'TEN', 'vikings': 'MIN', 'washington commanders': 'WAS',
-    'commanders': 'WAS',  # Common shortened name for Washington
-    'racers': 'LAR',  # Common error fix (Rams are LAR, not Racers)
+    # --- Full Names / Short Names Mapping to [2-Letter, 3-Letter] Output ---
+    '49ers': ['SF', 'SFO'],
+    'bears': ['CHI', 'CHI'],
+    'bengals': ['CIN', 'CIN'],
+    'bills': ['BUF', 'BUF'],
+    'broncos': ['DEN', 'DEN'],
+    'browns': ['CLE', 'CLE'],
+    'buccaneers': ['TB', 'TBB'],
+    'cardinals': ['ARI', 'ARI'],
+    'chargers': ['LAC', 'LAC'],
+    'chiefs': ['KC', 'KCC'],
+    'colts': ['IND', 'IND'],
+    'cowboys': ['DAL', 'DAL'],
+    'dolphins': ['MIA', 'MIA'],
+    'eagles': ['PHI', 'PHI'],
+    'falcons': ['ATL', 'ATL'],
+    'giants': ['NYG', 'NYG'],
+    'jaguars': ['JAX', 'JAX'],
+    'jets': ['NYJ', 'NYJ'],
+    'lions': ['DET', 'DET'],
+    'packers': ['GB', 'GNB'],
+    'panthers': ['CAR', 'CAR'],
+    'patriots': ['NE', 'NWE'],
+    'raiders': ['LV', 'LVR'],
+    'rams': ['LA', 'LAR'],
+    'ravens': ['BAL', 'BLT'],
+    'saints': ['NO', 'NOR'],
+    'seahawks': ['SEA', 'SEA'],
+    'steelers': ['PIT', 'PIT'],
+    'texans': ['HOU', 'HOU'],
+    'titans': ['TEN', 'TEN'],
+    'vikings': ['MIN', 'MIN'],
+    'commanders': ['WAS', 'WSH'],
 
-    # --- Official Abbreviated Lookups (Key: Abbreviation in lowercase, Value: Abbreviation) ---
-    # AFC East
-    'buf': 'BUF', 'ne': 'NE', 'mia': 'MIA', 'nyj': 'NYJ',
-    # AFC North
-    'bal': 'BAL', 'cin': 'CIN', 'cle': 'CLE', 'pit': 'PIT',
-    # AFC South
-    'hou': 'HOU', 'ind': 'IND', 'jax': 'JAX', 'ten': 'TEN',
-    # AFC West
-    'den': 'DEN', 'kc': 'KC', 'lac': 'LAC', 'lv': 'LV',
-    # NFC East
-    'dal': 'DAL', 'nyg': 'NYG', 'phi': 'PHI', 'was': 'WAS',
-    # NFC North
-    'chi': 'CHI', 'det': 'DET', 'gb': 'GB', 'min': 'MIN',
-    # NFC South
-    'atl': 'ATL', 'car': 'CAR', 'no': 'NO', 'tb': 'TB',
-    # NFC West
-    'ari': 'ARI', 'lar': 'LAR', 'sf': 'SF', 'sea': 'SEA',
-}
+    # --- Robust Lookups (Key: Abbreviation in lowercase, Value: [2-Letter, 3-Letter]) ---
+    'racers': ['LA', 'LAR'],  # Common error fix
+    'ram': ['LA', 'LAR'],
 
-TEAM_ABBREVIATIONS_3LETTER = {
-    '49ers': 'SFO', 'bears': 'CHI', 'bengals': 'CIN', 'bills': 'BUF',
-    'broncos': 'DEN', 'browns': 'CLE', 'buccaneers': 'TBB', 'cardinals': 'ARI',
-    'chargers': 'LAC', 'chiefs': 'KCC', 'colts': 'IND', 'cowboys': 'DAL',
-    'dolphins': 'MIA', 'eagles': 'PHI', 'falcons': 'ATL', 'giants': 'NYG',
-    'jaguars': 'JAX', 'jets': 'NYJ', 'lions': 'DET', 'packers': 'GNB',
-    'panthers': 'CAR', 'patriots': 'NWE', 'raiders': 'LVR', 'rams': 'LAR',
-    'ravens': 'BLT', 'saints': 'NOR', 'seahawks': 'SEA', 'steelers': 'PIT',
-    'texans': 'HOU', 'titans': 'TEN', 'vikings': 'MIN', 'commanders': 'WSH',
-    'san francisco': 'SFO', 'green bay': 'GNB', 'kansas city': 'KCC',
-    'new england': 'NWE', 'new orleans': 'NOR', 'tampa bay': 'TBB',
-
-    # Abbreviation lookups (for robustness)
-    'ari': 'ARI', 'atl': 'ATL', 'blt': 'BLT', 'buf': 'BUF', 'car': 'CAR',
-    'chi': 'CHI', 'cin': 'CIN', 'cle': 'CLE', 'dal': 'DAL', 'den': 'DEN',
-    'det': 'DET', 'gnb': 'GNB', 'hou': 'HOU', 'ind': 'IND', 'jax': 'JAX',
-    'kcc': 'KCC', 'lvr': 'LVR', 'lac': 'LAC', 'lar': 'LAR', 'mia': 'MIA',
-    'min': 'MIN', 'nwe': 'NWE', 'nor': 'NOR', 'nyg': 'NYG', 'nyj': 'NYJ',
-    'phi': 'PHI', 'pit': 'PIT', 'sfo': 'SFO', 'sea': 'SEA', 'tbb': 'TBB',
-    'ten': 'TEN', 'wsh': 'WSH',
+    # Include all 2- and 3-letter abbreviations as keys for robust lookup
+    'buf': ['BUF', 'BUF'], 'ne': ['NE', 'NWE'], 'mia': ['MIA', 'MIA'], 'nyj': ['NYJ', 'NYJ'],
+    'bal': ['BAL', 'BLT'], 'cin': ['CIN', 'CIN'], 'cle': ['CLE', 'CLE'], 'pit': ['PIT', 'PIT'],
+    'hou': ['HOU', 'HOU'], 'ind': ['IND', 'IND'], 'jax': ['JAX', 'JAX'], 'ten': ['TEN', 'TEN'],
+    'den': ['DEN', 'DEN'], 'kc': ['KC', 'KCC'], 'lac': ['LAC', 'LAC'], 'lv': ['LV', 'LVR'],
+    'dal': ['DAL', 'DAL'], 'nyg': ['NYG', 'NYG'], 'phi': ['PHI', 'PHI'], 'was': ['WAS', 'WSH'],
+    'chi': ['CHI', 'CHI'], 'det': ['DET', 'DET'], 'gb': ['GB', 'GNB'], 'min': ['MIN', 'MIN'],
+    'atl': ['ATL', 'ATL'], 'car': ['CAR', 'CAR'], 'no': ['NO', 'NOR'], 'tb': ['TB', 'TBB'],
+    'ari': ['ARI', 'ARI'], 'lar': ['LAR', 'LAR'], 'sf': ['SF', 'SFO'], 'sea': ['SEA', 'SEA'],
+    'wsh': ['WAS', 'WSH'], 'blt': ['BAL', 'BLT'], 'gnb': ['GB', 'GNB'], # etc. (adding 3-letter keys)
+    'kcc': ['KC', 'KCC'], 'tbb': ['TB', 'TBB'], 'nor': ['NO', 'NOR'], 'sfo': ['SF', 'SFO'],
+    'nwe': ['NE', 'NWE'], 'lvr': ['LV', 'LVR'],
 }
 
 def get_weekly_team_stats(team_input: str, year: int, week: int) -> list[Dict[str, Any]]:
@@ -403,7 +404,7 @@ def get_seasonal_team_totals(team_input: str, year: int) -> list[Dict[str, Any]]
 
     # 1. Standardize the input
     standardized_team = TEAM_ABBREVIATIONS.get(team_input.lower(), team_input.upper())
-    standardized_team_abbrev_3_letter = TEAM_ABBREVIATIONS_3LETTER.get(team_input.lower(), team_input.upper())
+
 
     try:
         # A. Import Seasonal Data (Contains 'player_id' but not name)
@@ -444,16 +445,9 @@ def get_seasonal_team_totals(team_input: str, year: int) -> list[Dict[str, Any]]
         (df_merged['position'].isin(relevant_positions)) &
         (df_merged['games'] > 0)
         ]
-
     if team_data.empty:
-        team_data = df_merged[
-            (df_merged['recent_team'] == standardized_team_abbrev_3_letter) &
-            (df_merged['position'].isin(relevant_positions)) &
-            (df_merged['games'] > 0)
-            ]
-        if team_data.empty:
-            print(f"Team '{team_input}' not found or no fantasy data for {year}.")
-            return []
+      print(f"Team '{team_input}' not found or no fantasy data for {year}.")
+      return []
 
     # 3. Process and Calculate Fuzzy Inputs (Totals) for Each Player
     results_list = []
@@ -497,7 +491,7 @@ def get_seasonal_team_totals2(team_input: str, year: int) -> list[Dict[str, Any]
     print(f"Fetching and processing seasonal totals for Team: {team_input} ({year})...")
 
     standardized_team = TEAM_ABBREVIATIONS.get(team_input.lower(), team_input.upper())
-    standardized_team_3_letter = TEAM_ABBREVIATIONS_3LETTER.get(team_input.lower(), team_input.upper())
+
     relevant_positions = ['RB', 'WR', 'TE']
 
     try:
@@ -530,7 +524,7 @@ def get_seasonal_team_totals2(team_input: str, year: int) -> list[Dict[str, Any]
         )
         .filter(
             # Filter by team (using EITHER the 2-letter or 3-letter abbreviation column)
-            (pl.col("team").is_in([standardized_team, standardized_team_3_letter])) &
+            (pl.col("team").is_in(standardized_team)) &
             # Filter by relevant positions
             (pl.col("position").is_in(relevant_positions)) &
             # Filter for players who played at least one game
