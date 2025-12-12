@@ -2,8 +2,11 @@ import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import nfl_data_py as nfl #need python 3.12 or lower
+import nflreadpy as nflread
 import pandas as pd
+import polars as pl
 from typing import Dict, Any, Optional
+polars_df = nflread.load_player_stats([2025], "reg")
 
 # --- 1. FUZZY LOGIC SETUP ---
 # Inputs: Player statistics that influence the decision (Antecedents)
@@ -482,6 +485,208 @@ def get_seasonal_team_totals(team_input: str, year: int) -> list[Dict[str, Any]]
 
     return results_list
 
+def get_seasonal_team_totals2(team_input: str, year: int) -> list[Dict[str, Any]]:
+    """
+    Fetches raw NFL seasonal totals for all relevant fantasy players on a specific team
+    for a given year, mapping the player_id to the player's display name.
+
+    :param team_input: The team name or abbreviation (e.g., 'Rams' or 'LAR').
+    :param year: The NFL Season Year.
+    :return: A list of dictionaries, one for each player with their seasonal totals.
+    """
+    print(f"Fetching and processing seasonal totals for Team: {team_input} ({year})...")
+
+    standardized_team = TEAM_ABBREVIATIONS.get(team_input.lower(), team_input.upper())
+    standardized_team_3_letter = TEAM_ABBREVIATIONS_3LETTER.get(team_input.lower(), team_input.upper())
+    relevant_positions = ['RB', 'WR', 'TE']
+
+    try:
+        # A. Import Seasonal Data (Returns a Polars DataFrame)
+        # Use 'season' summary level to get totals, but we'll calculate PGAs later
+        df_seasonal = nflread.load_player_stats([year], 'reg')
+    except Exception as e:
+        print(f"Error fetching seasonal data: {e}")
+        return []
+
+        # 2. Select, Rename, Filter, and Calculate All Metrics in One Chain
+    team_data = (
+        df_seasonal
+        .select(
+            # Select/Rename Columns for output and calculations
+            pl.col("player_id"),
+            pl.col("player_display_name").alias("name"),
+            pl.col("recent_team").alias("team"),
+            pl.col("position"),
+            pl.col("games"),
+
+            # Raw Stats for Calculation
+            pl.col("carries").alias("carries"),
+            pl.col("targets").alias("targets"),
+            pl.col("rushing_yards").alias("rushing_yards"),
+            pl.col("receiving_yards").alias("receiving_yards"),
+            pl.col("receptions").alias("raw_receptions"),
+            pl.col("rushing_tds").alias("rushing_tds"),
+            pl.col("receiving_tds").alias("receiving_tds"),
+        )
+        .filter(
+            # Filter by team (using EITHER the 2-letter or 3-letter abbreviation column)
+            (pl.col("team").is_in([standardized_team, standardized_team_3_letter])) &
+            # Filter by relevant positions
+            (pl.col("position").is_in(relevant_positions)) &
+            # Filter for players who played at least one game
+            (pl.col("games") > 0)
+        )
+        .with_columns(
+            # 3. Process and Calculate Fuzzy Inputs (Per Game Average)
+            # Use pl.col().fill_null(0) to safely handle nulls and fill with 0 before division
+
+            # volume_calc = (carries + targets) / games
+            (
+                    (pl.col("carries").fill_null(0) + pl.col("targets").fill_null(0)) / pl.col("games")
+            ).alias("volume_calc"),
+
+            # yards_calc = (rushing_yards + receiving_yards) / games
+            (
+                    (pl.col("rushing_yards").fill_null(0) + pl.col("receiving_yards").fill_null(0)) / pl.col("games")
+            ).alias("yards_calc"),
+
+            # receptions_calc = (raw_receptions) / games
+            (
+                    pl.col("raw_receptions").fill_null(0) / pl.col("games")
+            ).alias("receptions_calc"),
+
+            # td_calc = (rushing_tds + receiving_tds) / games
+            (
+                    (pl.col("rushing_tds").fill_null(0) + pl.col("receiving_tds").fill_null(0)) / pl.col("games")
+            ).alias("td_calc"),
+        )
+        .select(
+            # 4. Final selection and type casting to match your original output structure
+            pl.col("name"),
+            pl.col("team"),
+            pl.col("position"),
+
+            # Cast all calculated PGAs to integers (to match your original logic)
+            pl.col("volume_calc").cast(pl.Int32).alias("volume"),
+            pl.col("yards_calc").cast(pl.Int32).alias("yards"),
+            pl.col("receptions_calc").cast(pl.Int32).alias("receptions"),
+            pl.col("td_calc").cast(pl.Int32).alias("td"),
+
+            pl.col("games").alias("games_played"),
+        )
+        # 5. Convert the final Polars DataFrame to a list of Python dictionaries
+        # This replaces the entire 'for index, row in team_data.iterrows():' loop.
+        .filter(pl.col('volume') > 0)  # Final filter on the calculated volume > 0
+        .to_dicts()
+    )
+
+    # team_data is now a list of dictionaries, ready to be returned
+    if not team_data:
+        print(f"Team '{team_input}' not found or no fantasy data for {year}.")
+
+    return team_data
+
+
+# This function no longer needs the team abbreviation dictionaries
+def get_seasonal_player_stats_from_totals2(player_name: str, year: int) -> Dict[str, Any]:
+    """
+    Fetches seasonal totals, calculates Per-Game Averages (PGA) for a single player
+    using a Polars vectorized chain, and returns the result as a dictionary.
+
+    :param player_name: The player's name (partial match is allowed, e.g., 'mahomes').
+    :param year: The NFL Season Year.
+    :return: A dictionary containing the player's calculated PGAs, or an empty dict on failure.
+    """
+    print(f"Fetching and processing seasonal totals for Player: {player_name} ({year})...")
+    RELEVANT_POSITIONS = ['RB', 'WR', 'TE']
+    try:
+        # A. Import Seasonal Data (Returns a Polars DataFrame)
+        # Use 'season' summary level to ensure we get total stats
+        df_seasonal = nflread.load_player_stats([year], 'reg')
+    except Exception as e:
+        print(f"Error fetching seasonal data: {e}")
+        return {}
+
+    # 1. Polars Vectorized Processing Chain
+    processed_player_data = (
+        df_seasonal
+        .select(
+            # Select/Rename Columns needed for the final output and calculations
+            pl.col("player_display_name").alias("name"),
+            pl.col("recent_team").alias("team"),
+            pl.col("position"),
+            pl.col("games"),
+
+            # Raw Stats (Safely treat nulls as 0)
+            pl.col("carries").alias("carries"),
+            pl.col("targets").alias("targets"),
+            pl.col("rushing_yards").alias("rushing_yards"),
+            pl.col("receiving_yards").alias("receiving_yards"),
+            pl.col("receptions").alias("raw_receptions"),
+            pl.col("rushing_tds").alias("rushing_tds"),
+            pl.col("receiving_tds").alias("receiving_tds"),
+        )
+        .filter(
+            # 2. Key Change: Filter by Player Name using case-insensitive string contains
+            pl.col("name").str.contains(f"(?i){player_name}") &
+
+            # Filter by Relevant Positions
+            (pl.col("position").is_in(RELEVANT_POSITIONS)) &
+
+            # Filter for players who played at least one game
+            (pl.col("games") > 0)
+        )
+        .with_columns(
+            # 3. Calculate Per Game Averages (PGAs) - Same logic as before
+
+            # Volume PGA = (Carries + Targets) / Games
+            (
+                    (pl.col("carries") + pl.col("targets")) / pl.col("games")
+            ).round(2).alias("volume_pga"),
+
+            # Yards PGA = (Rushing Yards + Receiving Yards) / Games
+            (
+                    (pl.col("rushing_yards") + pl.col("receiving_yards")) / pl.col("games")
+            ).round(2).alias("yards_pga"),
+
+            # Receptions PGA = Receptions / Games
+            (
+                    pl.col("raw_receptions") / pl.col("games")
+            ).round(2).alias("receptions_pga"),
+
+            # Touchdowns PGA = (Rushing TDs + Receiving TDs) / Games
+            (
+                    (pl.col("rushing_tds") + pl.col("receiving_tds")) / pl.col("games")
+            ).round(2).alias("td_pga"),
+        )
+        .filter(
+            # Final filter: Only include players with calculated volume > 0
+            (pl.col("volume_pga") > 0)
+        )
+        .select(
+            # 4. Final selection and formatting (using round() to match your original output)
+            pl.col("name"),
+            pl.col("team"),
+            pl.col("position"),
+            pl.col("volume_pga").alias("volume"),
+            pl.col("yards_pga").alias("yards"),
+            pl.col("receptions_pga").alias("receptions"),
+            pl.col("td_pga").alias("td"),
+            pl.col("games").cast(pl.Int32).alias("games_played"),
+        )
+    )
+
+    # 5. Key Change: Return the single first match as a dictionary
+    if processed_player_data.is_empty():
+        print(f"Player '{player_name}' not found or no fantasy data for {year}.")
+        return {}
+
+    # Use .row() to efficiently extract the first row as a Python dictionary
+    # The Polars documentation recommends checking the result size before using .row()
+    # with a predicate to avoid raising an error if more than one row is found.
+    # Since we already filtered and know it has at least one row, we just take the first index (0).
+    return processed_player_data.row(0, named=True)
+
 def get_seasonal_player_stats_from_totals(player_name: str, year: int) -> Dict[str, Any]:
     """
     (Updated) Fetches seasonal totals and calculates Per-Game Averages (PGA)
@@ -576,11 +781,11 @@ def run_fuzzy_analysis(player_name_or_team: str, year: int):
     # 1. Determine Input Type and Get Raw Stats
     if is_team_input(player_name_or_team):
         # Input is a team name (e.g., 'Chiefs'). Get stats for all fantasy players on that team.
-        raw_stats_list = get_seasonal_team_totals(player_name_or_team, year)
+        raw_stats_list = get_seasonal_team_totals2(player_name_or_team, year)
     else:
         # Input is a player name. Get stats for only that player.
         # We wrap the single player's dictionary result in a list for consistency.
-        single_stat_dict = get_seasonal_player_stats_from_totals(player_name_or_team, year)
+        single_stat_dict = get_seasonal_player_stats_from_totals2(player_name_or_team, year)
         raw_stats_list = [single_stat_dict] if single_stat_dict else []
 
     if not raw_stats_list:
