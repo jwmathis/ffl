@@ -6,7 +6,6 @@ app = Flask(__name__)
 
 # --- Configuration (Hard set the current NFL season details) ---
 CURRENT_YEAR = 2025
-CURRENT_WEEK = 15
 
 
 # Route to handle the AJAX POST request from the HTML form
@@ -16,11 +15,9 @@ def analyze_player():
     data = request.get_json()
     player_input = data.get('player_or_team_input')
     selected_year = data.get('year')
-    selected_week = data.get('week')
 
     try:
         year = int(selected_year)
-        week = int(selected_week)
     except (ValueError, TypeError):
         # Handle cases where year/week might be missing or invalid
         return jsonify({"error": "Invalid year or week selected."}), 400
@@ -30,7 +27,7 @@ def analyze_player():
 
     try:
         # 2. Call the Fuzzy Logic Function
-        result_data = run_fuzzy_analysis(player_input, year, week)
+        result_data = run_fuzzy_analysis(player_input, year)
 
         # 3. Handle case where run_fuzzy_analysis couldn't find data
         if isinstance(result_data, str) and "Analysis failed" in result_data:

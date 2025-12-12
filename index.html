@@ -48,7 +48,7 @@
 
                 <div>
                     <label for="player-input" class="text-lg text-gray-300 mb-2 block">
-                        Enter Player Name or Team (e.g., Patrick Mahomes or Chiefs):
+                        Enter Player Name or Team (e.g., Puka Nacua or Rams):
                     </label>
                     <input type="text"
                            id="player-input"
@@ -63,19 +63,10 @@
 
                 <div>
                     <label class="text-lg text-gray-300 mb-2 block">
-                        Select Football Week and Year for Analysis:
+                        Select Football Year for Analysis:
                     </label>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="week-input" class="text-sm text-gray-400 mb-1 block">Week Number (1-18)</label>
-                            <input type="number" id="week-input" name="analysis_week"
-                                   value="15"
-                                   min="1" max="18"
-                                   placeholder="e.g., 15"
-                                   class="w-full p-4 border border-gray-600 rounded-lg focus:ring-yellow-500 focus:border-yellow-500 bg-gray-700 text-white text-lg"
-                                   required>
-                        </div>
+                    <div class="grid grid-cols-1 gap-4">
 
                         <div>
                             <label for="year-input" class="text-sm text-gray-400 mb-1 block">Year</label>
@@ -89,9 +80,9 @@
                     </div>
 
                     <p class="text-sm text-gray-400 mt-2">
-                        *The NFL regular season runs roughly from Week 1 to Week 18.
+                        *Analysis will use seasonal averages for the year selected.
                     </p>
-                </div>
+                    </div>
 
                 <button type="submit"
                         id="submit-button"
@@ -119,7 +110,7 @@
                         Analysis for <span id="player-name-display" class="text-yellow-400">--</span>
                     </h2>
                     <p class="text-gray-400 text-sm">
-                        Input Data: Week <span id="input-week">--</span>, <span id="input-year">--</span>
+                        Input Data: <span id="input-year">--</span> Seasonal Average
                     </p>
                 </div>
 

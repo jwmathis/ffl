@@ -3,7 +3,7 @@ import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 import nfl_data_py as nfl #need python 3.12 or lower
 import pandas as pd
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # --- 1. FUZZY LOGIC SETUP ---
 # Inputs: Player statistics that influence the decision (Antecedents)
@@ -233,6 +233,27 @@ TEAM_ABBREVIATIONS = {
     'ari': 'ARI', 'lar': 'LAR', 'sf': 'SF', 'sea': 'SEA',
 }
 
+TEAM_ABBREVIATIONS_3LETTER = {
+    '49ers': 'SFO', 'bears': 'CHI', 'bengals': 'CIN', 'bills': 'BUF',
+    'broncos': 'DEN', 'browns': 'CLE', 'buccaneers': 'TBB', 'cardinals': 'ARI',
+    'chargers': 'LAC', 'chiefs': 'KCC', 'colts': 'IND', 'cowboys': 'DAL',
+    'dolphins': 'MIA', 'eagles': 'PHI', 'falcons': 'ATL', 'giants': 'NYG',
+    'jaguars': 'JAX', 'jets': 'NYJ', 'lions': 'DET', 'packers': 'GNB',
+    'panthers': 'CAR', 'patriots': 'NWE', 'raiders': 'LVR', 'rams': 'LAR',
+    'ravens': 'BLT', 'saints': 'NOR', 'seahawks': 'SEA', 'steelers': 'PIT',
+    'texans': 'HOU', 'titans': 'TEN', 'vikings': 'MIN', 'commanders': 'WSH',
+    'san francisco': 'SFO', 'green bay': 'GNB', 'kansas city': 'KCC',
+    'new england': 'NWE', 'new orleans': 'NOR', 'tampa bay': 'TBB',
+
+    # Abbreviation lookups (for robustness)
+    'ari': 'ARI', 'atl': 'ATL', 'blt': 'BLT', 'buf': 'BUF', 'car': 'CAR',
+    'chi': 'CHI', 'cin': 'CIN', 'cle': 'CLE', 'dal': 'DAL', 'den': 'DEN',
+    'det': 'DET', 'gnb': 'GNB', 'hou': 'HOU', 'ind': 'IND', 'jax': 'JAX',
+    'kcc': 'KCC', 'lvr': 'LVR', 'lac': 'LAC', 'lar': 'LAR', 'mia': 'MIA',
+    'min': 'MIN', 'nwe': 'NWE', 'nor': 'NOR', 'nyg': 'NYG', 'nyj': 'NYJ',
+    'phi': 'PHI', 'pit': 'PIT', 'sfo': 'SFO', 'sea': 'SEA', 'tbb': 'TBB',
+    'ten': 'TEN', 'wsh': 'WSH',
+}
 
 def get_weekly_team_stats(team_input: str, year: int, week: int) -> list[Dict[str, Any]]:
     """
@@ -294,60 +315,187 @@ def get_weekly_team_stats(team_input: str, year: int, week: int) -> list[Dict[st
         results_list.append(player_result)
 
     return results_list
-def get_seasonal_player_stats(player_name: str, year: int, week: int) ->Dict[str, Any]:
-    # Define the columns we need for calculation:
-    # player_display_name is used for filtering
-    # rush_attempt, receptions, receiving_yards, rushing_yards, receiving_td, rushing_td
+
+
+def get_seasonal_team_totals(team_input: str, year: int) -> list[Dict[str, Any]]:
+    """
+    Fetches raw NFL seasonal totals for all relevant fantasy players on a specific team
+    for a given year, mapping the player_id to the player's display name.
+
+    :param team_input: The team name or abbreviation (e.g., 'Rams' or 'LAR').
+    :param year: The NFL Season Year.
+    :return: A list of dictionaries, one for each player with their seasonal totals.
+    """
+    print(f"Fetching and processing seasonal totals for Team: {team_input} ({year})...")
+
+    # 1. Standardize the input
+    standardized_team = TEAM_ABBREVIATIONS.get(team_input.lower(), team_input.upper())
+    standardized_team_abbrev_3_letter = TEAM_ABBREVIATIONS_3LETTER.get(team_input.lower(), team_input.upper())
+    # 2. Define Columns and Import Seasonal Data
     cols_to_pull = [
-        'player_display_name', 'recent_team', 'position', 'week', 'carries', 'rushing_yards',
-        'rushing_tds', 'receptions', 'targets', 'receiving_yards', 'receiving_tds'
+        'player_id', 'recent_team', 'position', 'carries', 'rushing_yards',
+        'rushing_tds', 'receptions', 'targets', 'receiving_yards', 'receiving_tds',
+        'games'
     ]
 
-    # 1. Import Seasonal Data
     try:
-        df = nfl.import_seasonal_data([year], 'REG')
+        # A. Import Seasonal Data (Contains 'player_id' but not name)
+        df_seasonal = nfl.import_seasonal_data([year], 'REG')
 
-        player_id_df = df[df['player_display_name'] == player_name]
+        # B. Import ID Mapping Data (Contains 'player_id' and 'name')
+        id_df = nfl.import_ids()
+
+        # C. Filter ID map to just the columns we need for the merge
+        id_df_filtered = id_df[['gsis_id', 'name', 'team', 'position']].copy()
+
+        # D. Merge Seasonal Data with ID map to get the player name
+        # The common ID between the two dataframes is player_id (seasonal) and player_id (ID map)
+
+        df_merged = pd.merge(
+            df_seasonal,
+            id_df_filtered,
+            left_on='player_id',
+            right_on='gsis_id',
+            how='left'
+        )
+
+        # E. Rename the merged 'name' column to the expected 'player_display_name'
+        df_merged.rename(columns={
+            'name': 'player_display_name',
+            'team': 'recent_team',
+        }, inplace=True)
+
     except Exception as e:
-        print(f"Error fetching data: {e}")
-        return {}
+        print(f"Error fetching and merging data: {e}")
+        return []
 
-    # 2. Filter by Player Name and Week
-    player_data = df[
-        (df['player_display_name'].str.contains(player_name, case=False, na=False)) &
-        (df['week'] == week)
+    # 3. Filter by Team and Relevant Positions
+    relevant_positions = ['RB', 'WR', 'TE']
+
+    # Filter the merged DataFrame
+    team_data = df_merged[
+        (df_merged['recent_team'] == standardized_team) &
+        (df_merged['position'].isin(relevant_positions)) &
+        (df_merged['games'] > 0)
         ]
 
-    if player_data.empty:
-        print(f"Player '{player_name}' not found for Week {week} or data is missing.")
+    if team_data.empty:
+        team_data = df_merged[
+            (df_merged['recent_team'] == standardized_team_abbrev_3_letter) &
+            (df_merged['position'].isin(relevant_positions)) &
+            (df_merged['games'] > 0)
+            ]
+        if team_data.empty:
+            print(f"Team '{team_input}' not found or no fantasy data for {year}.")
+            return []
+
+    # 4. Process and Calculate Fuzzy Inputs (Totals) for Each Player
+    results_list = []
+
+    for index, player_stats in team_data.iterrows():
+
+        # Calculate the four fuzzy inputs as TOTALS
+        volume_calc = (player_stats.get('carries', 0) + player_stats.get('targets', 0) )/player_stats.get('games', 0)
+        yards_calc = (player_stats.get('rushing_yards', 0) + player_stats.get('receiving_yards', 0)) /player_stats.get('games', 0)
+        receptions_calc = (player_stats.get('receptions', 0)) /player_stats.get('games', 0)
+        td_calc = (player_stats.get('rushing_tds', 0) + player_stats.get('receiving_tds', 0)) /player_stats.get('games', 0)
+
+        # Store the raw seasonal totals (NOT PGA)
+        player_result = {
+            'name': player_stats.get('player_display_name'),  # Now correctly mapped
+            'team': player_stats.get('recent_team'),
+            'position': player_stats.get('position'),
+            'volume': int(volume_calc),
+            'yards': int(yards_calc),
+            'receptions': int(receptions_calc),
+            'td': int(td_calc),
+            'games_played': int(player_stats.get('games', 0))
+        }
+
+        if player_result['volume'] > 0 and player_result['name']:
+            results_list.append(player_result)
+
+    return results_list
+
+def get_seasonal_player_stats_from_totals(player_name: str, year: int) -> Dict[str, Any]:
+    """
+    (Updated) Fetches seasonal totals and calculates Per-Game Averages (PGA)
+    using the ID mapping system.
+    """
+
+    print(f"Fetching raw seasonal totals for {player_name} ({year})...")
+
+    try:
+        df_seasonal = nfl.import_seasonal_data([year], 'REG')
+    except Exception as e:
+        print(f"Error fetching seasonal data: {e}")
         return {}
 
-    # Take the first match if multiple exist (which shouldn't happen with display name)
+    id_df = nfl.import_ids()
+
+    # C. Filter ID map to just the columns we need for the merge
+    id_df_filtered = id_df[['gsis_id', 'name', 'team', 'position']].copy()
+
+    # D. Merge Seasonal Data with ID map to get the player name
+    # The common ID between the two dataframes is player_id (seasonal) and player_id (ID map)
+
+    df_merged = pd.merge(
+        df_seasonal,
+        id_df_filtered,
+        left_on='player_id',
+        right_on='gsis_id',
+        how='left'
+    )
+    df_merged.rename(columns={
+        'name': 'player_display_name',
+        'team': 'recent_team',
+    }, inplace=True)
+
+    # 1. Filter Data by Player ID
+    # Use the retrieved ID to filter the DataFrame
+    player_data = df_merged[
+        (df_merged['player_display_name'].str.contains(player_name, case=False, na=False))
+    ]
+
+    if player_data.empty:
+        print(f"Player '{player_name}' not found in {year} seasonal data.")
+        return {}
+
+    # Take the first match
     player_stats = player_data.iloc[0]
 
-    # 3. Calculate Fuzzy Inputs
+    # ... (Rest of the PGA calculation remains the same) ...
+    # 2. Get Games Played (Crucial for PGA calculation)
+    games_played = player_stats.get('games', 0)
+    if games_played == 0:
+        print(f"{player_name} has 0 games played in {year}.")
+        return {}
 
-    # 'volume' = Carries + Targets
-    volume_calc = player_stats.get('carries', 0) + player_stats.get('targets', 0)
+    # 3. Calculate Totals (These are cumulative season totals)
+    total_carries = player_stats.get('carries', 0)
+    total_targets = player_stats.get('targets', 0)
+    total_rushing_yards = player_stats.get('rushing_yards', 0)
+    total_receiving_yards = player_stats.get('receiving_yards', 0)
+    total_receptions = player_stats.get('receptions', 0)
+    total_rushing_tds = player_stats.get('rushing_tds', 0)
+    total_receiving_tds = player_stats.get('receiving_tds', 0)
 
-    # 'yards' = Rushing Yards + Receiving Yards
-    yards_calc = player_stats.get('rushing_yards', 0) + player_stats.get('receiving_yards', 0)
+    # 4. Calculate Per-Game Averages (PGA)
+    volume_pga = (total_carries + total_targets) / games_played
+    yards_pga = (total_rushing_yards + total_receiving_yards) / games_played
+    receptions_pga = total_receptions / games_played
+    td_pga = (total_rushing_tds + total_receiving_tds) / games_played
 
-    # 'receptions' = Receptions
-    receptions_calc = player_stats.get('receptions', 0)
-
-    # 'td' = Rushing TDs + Receiving TDs
-    td_calc = player_stats.get('rushing_tds', 0) + player_stats.get('receiving_tds', 0)
-
-    # 4. Return as a dictionary
+    # 5. Return the PGA as a dictionary
     return {
-        'name': player_stats.get('player_display_name'),
+        'name': player_name,  # Use the user input name for simplicity
         'team': player_stats.get('recent_team'),
         'position': player_stats.get('position'),
-        'volume': int(volume_calc),
-        'yards': int(yards_calc),
-        'receptions': int(receptions_calc),
-        'td': int(td_calc),
+        'volume': round(volume_pga, 2),
+        'yards': round(yards_pga, 2),
+        'receptions': round(receptions_pga, 2),
+        'td': round(td_pga, 2),
+        'games_played': int(games_played)
     }
 
 def get_weekly_player_stats(player_name: str, year: int, week: int) ->Dict[str, Any]:
@@ -421,22 +569,21 @@ def is_team_input(text: str) -> bool:
     return text_lower in TEAM_ABBREVIATIONS or text.upper() in TEAM_ABBREVIATIONS.values()
 
 # --- 3. EXECUTION AND INTEGRATION FUNCTION ---
-def run_fuzzy_analysis(player_name_or_team: str, year: int, week: int):
+def run_fuzzy_analysis(player_name_or_team: str, year: int):
     """
     Main function to fetch data and run the fuzzy simulation
     :param player_name_or_team:
     :param year:
-    :param week:
     :return:
     """
     # 1. Determine Input Type and Get Raw Stats
     if is_team_input(player_name_or_team):
         # Input is a team name (e.g., 'Chiefs'). Get stats for all fantasy players on that team.
-        raw_stats_list = get_weekly_team_stats(player_name_or_team, year, week)
+        raw_stats_list = get_seasonal_team_totals(player_name_or_team, year)
     else:
         # Input is a player name. Get stats for only that player.
         # We wrap the single player's dictionary result in a list for consistency.
-        single_stat_dict = get_weekly_player_stats(player_name_or_team, year, week)
+        single_stat_dict = get_seasonal_player_stats_from_totals(player_name_or_team, year)
         raw_stats_list = [single_stat_dict] if single_stat_dict else []
 
     if not raw_stats_list:
@@ -484,7 +631,6 @@ def run_fuzzy_analysis(player_name_or_team: str, year: int, week: int):
                 "reco_score": reco_score,
                 "reco_conclusion": reco_conclusion,
                 "input_year": year,
-                "input_week": week
             }
             final_results.append(player_result)
 

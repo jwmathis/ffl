@@ -40,9 +40,9 @@ function renderPlayerList(dataArray) {
 
     // Set the header to show the team that was searched
     const teamName = dataArray.length > 0 ? dataArray[0].team : 'Team';
-    // Ensure dataArray[0].input_week exists before accessing it
-    const weekDisplay = dataArray.length > 0 && dataArray[0].input_week ? dataArray[0].input_week : 'N/A';
-    playerListHeader.textContent = `Top Fantasy Options for the ${teamName} (Week ${weekDisplay})`;
+
+    // REMOVED: References to weekDisplay
+    playerListHeader.textContent = `Top Fantasy Options for the ${teamName} (${dataArray.length > 0 ? dataArray[0].input_year : 'N/A'} Season)`;
 
     // Sort the players by score (highest first) for the best recommendation order
     dataArray.sort((a, b) => b.reco_score - a.reco_score);
@@ -52,7 +52,7 @@ function renderPlayerList(dataArray) {
             playerListContainer.insertAdjacentHTML('beforeend', createPlayerCardHTML(player));
         });
     } else {
-         playerListContainer.innerHTML = '<p class="text-lg text-gray-400 text-center p-4">No skill position data found for that team this week.</p>';
+         playerListContainer.innerHTML = '<p class="text-lg text-gray-400 text-center p-4">No skill position data found for that team this year.</p>';
     }
 
     // Hide the detailed single-player view when showing a list
@@ -92,7 +92,7 @@ function renderSinglePlayerDetail(data) {
 
     // Input Stats
     document.getElementById('input-year').textContent = data.input_year;
-    document.getElementById('input-week').textContent = data.input_week;
+    // REMOVED: document.getElementById('input-week').textContent = data.input_week;
     document.getElementById('stat-volume').textContent = data.volume;
     document.getElementById('stat-yards').textContent = data.yards;
     document.getElementById('stat-receptions').textContent = data.receptions;
@@ -110,8 +110,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Element References ---
     const playerInput = document.getElementById('player-input'); // The text field for the player/team name
     const form = document.getElementById('preferences-form'); // The main submission form
-    const weekInput = document.getElementById('week-input'); // Reference for the Week input
-    const yearInput = document.getElementById('year-input'); // <<< NEW: Reference for the Year input
+    // REMOVED: const weekInput = document.getElementById('week-input'); // Reference for the Week input
+    const yearInput = document.getElementById('year-input'); // Reference for the Year input
 
     // References for the submission button state
     const submitButton = document.getElementById('submit-button');
@@ -136,25 +136,25 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.style.display = 'none';
         errorMessage.textContent = '';
 
-        // --- NEW LOGIC: Extract Year and Week from separate inputs ---
+        // --- UPDATED LOGIC: Extract Year only ---
         const playerOrTeam = playerInput.value.trim();
-        const weekValue = weekInput.value.trim(); // Read week directly
-        const yearValue = yearInput.value.trim(); // <<< NEW: Read year directly
+        // REMOVED: const weekValue = weekInput.value.trim();
+        const yearValue = yearInput.value.trim();
 
-        if (!playerOrTeam || !weekValue || !yearValue) {
+        if (!playerOrTeam || !yearValue) {
             // Restore button state and alert the user if fields are empty.
             submitButton.disabled = false;
             buttonText.textContent = 'Analyze Player/Team';
             spinner.classList.add('hidden');
-            alert("Please enter a player name/team, week, and year.");
+            alert("Please enter a player name/team and year."); // Updated alert message
             return;
         }
 
         // Prepare the data payload to send to the Flask backend.
         const userInputs = {
             player_or_team_input: playerOrTeam,
-            year: yearValue,               // Send year as a string
-            week: weekValue                // Send week as a string
+            year: yearValue,               // Send year
+            // REMOVED: week: weekValue     // No longer sending week
         };
 
         try {
@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(userInputs) // Payload now includes player, year, and week
+                body: JSON.stringify(userInputs) // Payload now includes player and year
             });
 
             // Check if the HTTP response status code indicates success (200-299 range).
@@ -200,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } else if (Array.isArray(data) && data.length === 0) {
                 // It's an empty result (no player or team found)
-                errorMessage.textContent = 'No player or team data found for your search in the selected week/year.';
+                errorMessage.textContent = 'No player or team data found for your search in the selected year.';
                 recommendationsSection.classList.remove('hidden');
 
             } else {
