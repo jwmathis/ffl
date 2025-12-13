@@ -19,16 +19,16 @@ df = pd.DataFrame(polars_df)
 volume = ctrl.Antecedent(np.arange(0, 31, 1), 'volume')
 
 # Yards (Efficiency/Production): Total scrimmage yards (Rushing + Receiving)
-# Yards are the base of fantasy scoring. Range is set from 0 to 150.
-yards = ctrl.Antecedent(np.arange(0, 151, 1), 'yards')
+# Yards are the base of fantasy scoring. Range is set from 0 to 115.
+yards = ctrl.Antecedent(np.arange(0, 116, 1), 'yards')
 
 # Receptions (PPR Value): The number of receptions (crucial for PPR leagues)
-# Measures involvement in the passing game. Range is set from 0 to 15.
-receptions = ctrl.Antecedent(np.arange(0, 16, 1), 'receptions')
+# Measures involvement in the passing game. Range is set from 0 to 10.
+receptions = ctrl.Antecedent(np.arange(0, 11, 1), 'receptions')
 
 # Touchdowns (TD): The most volatile but highest-value metric.
-# Range is set from 0 to 3.
-td = ctrl.Antecedent(np.arange(0, 4, 1), 'td')
+# Range is set from 0 to 1.5.
+td = ctrl.Antecedent(np.arange(0, 2, 0.5), 'td')
 
 # Output: The final recommendation score (Consequent)
 # The final crisp score will be between 0 (Hard Sit) and 100 (Must Start)
@@ -42,23 +42,23 @@ recommendation = ctrl.Consequent(np.arange(0, 101, 1), 'recommendation')
 
 # Volume (0-30 carries/targets)
 volume['low'] = fuzz.trimf(volume.universe, [0, 0, 8])
-volume['medium'] = fuzz.trimf(volume.universe, [3, 13, 22])
-volume['high'] = fuzz.trimf(volume.universe, [18, 30, 30]) #Tightens overlap between medium and high to be more decisive
+volume['medium'] = fuzz.trimf(volume.universe, [8, 12, 16])
+volume['high'] = fuzz.trimf(volume.universe, [16, 30, 30]) #Tightens overlap between medium and high to be more decisive
 
-# Yards (0-150 yards)
-yards['poor'] = fuzz.trimf(yards.universe, [0, 0, 45])
-yards['average'] = fuzz.trimf(yards.universe, [20, 70, 110])
-yards['elite'] = fuzz.trimf(yards.universe, [100, 130, 150]) #Makes achieving elite harder to better reflect difficulty of hitting 100+ yards
+# Yards (0-115 yards)
+yards['poor'] = fuzz.trimf(yards.universe, [0, 0, 25])
+yards['average'] = fuzz.trimf(yards.universe, [25, 50, 75])
+yards['elite'] = fuzz.trimf(yards.universe, [75, 115, 115]) #Makes achieving elite harder to better reflect difficulty of hitting 100+ yards
 
-# Receptions (0-15 receptions)
+# Receptions (0-10 receptions)
 receptions['low'] = fuzz.trimf(receptions.universe, [0, 0, 4])
-receptions['decent'] = fuzz.trimf(receptions.universe, [2, 7, 12])
-receptions['high'] = fuzz.trimf(receptions.universe, [10, 15, 15])
+receptions['decent'] = fuzz.trimf(receptions.universe, [2, 5, 7])
+receptions['high'] = fuzz.trimf(receptions.universe, [6, 10, 10])
 
-# Touchdowns (0-3 TD)
-td['none'] = fuzz.trimf(td.universe, [0, 0, 0.5])
-td['one'] = fuzz.trimf(td.universe, [0, 1, 2])
-td['multiple'] = fuzz.trimf(td.universe, [1, 3, 3])
+# Touchdowns (0-1.5 TD)
+td['low'] = fuzz.trimf(td.universe, [0, 0, 0.5])
+td['medium'] = fuzz.trimf(td.universe, [.5, .75, 1])
+td['high'] = fuzz.trimf(td.universe, [.5, 1.5, 1.5])
 
 
 # Recommendation Output (0-100 score)
@@ -71,25 +71,25 @@ recommendation['start'] = fuzz.trimf(recommendation.universe, [60, 100, 100])
 # The use of the Mamdani MIN-MAX method for aggregation ensures high interpretability.
 
 rule1 = ctrl.Rule(
-    (volume['high'] | receptions['high']) & yards['elite'] & td['multiple'],
+    (volume['high'] | receptions['high']) & yards['elite'] & td['high'],
     recommendation['start']
 )
 # Justification: Elite volume/receptions with elite yards AND multiple TDs = Must Start.
 
 rule2 = ctrl.Rule(
-    (volume['low'] & receptions['low']) | yards['poor'] & td['none'],
+    (volume['low'] & receptions['low']) | yards['poor'] & td['low'],
     recommendation['sit']
 )
 # Justification: Low volume, low efficiency, no TDs = Hard Sit.
 
 rule3 = ctrl.Rule(
-    volume['medium'] & yards['average'] & receptions['decent'] & td['one'],
+    volume['medium'] & yards['average'] & receptions['decent'] & td['medium'],
     recommendation['start']
 )
 # Justification: Solid all-around performance with a TD = Safe Start.
 
 rule4 = ctrl.Rule(
-    (volume['medium'] | receptions['decent']) & yards['average'] & td['none'],
+    (volume['medium'] | receptions['decent']) & yards['average'] & td['low'],
     recommendation['flex']
 )
 # Justification: Decent floor, but lacking the high ceiling of a TD = Flex consideration.
@@ -101,31 +101,31 @@ rule5 = ctrl.Rule(
 # Justification: Low production across the board means high risk.
 
 rule6 = ctrl.Rule(
-    volume['high'] & yards['poor'] & td['none'],
+    volume['high'] & yards['poor'] & td['low'],
     recommendation['sit']
 )
 # Justification: High volume but zero efficiency/score = Inefficient, Sit.
 
 rule7 = ctrl.Rule(
-    yards['elite'] & td['multiple'],
+    yards['elite'] & td['high'],
     recommendation['start']
 )
 # Justification: Exceptional efficiency and TDs overpowers moderate volume.
 
 rule8 = ctrl.Rule(
-    td['multiple'] & (volume['medium'] | yards['average']),
+    td['high'] & (volume['medium'] | yards['average']),
     recommendation['start']
 )
 # Justification: Multiple TDs is a high leverage event, justifying a start.
 
 rule9 = ctrl.Rule(
-    volume['medium'] & yards['average'] & td['none'],
+    volume['medium'] & yards['average'] & td['low'],
     recommendation['flex']
 )
 # Justification: Mediocre floor, no ceiling.
 
 rule10 = ctrl.Rule(
-    (volume['high'] | receptions['high']) & yards['average'] & td['none'],
+    (volume['high'] | receptions['high']) & yards['average'] & td['low'],
     recommendation['flex']
 )
 # Justification: Good volume floor, but needs the TD/Elite Yards for a definite start.
@@ -146,49 +146,49 @@ rule12 = ctrl.Rule(
 # Rule 13: The High-Volume, Zero-Efficiency BUST (Hard SIT)
 # Justification: Getting lots of touches (high volume) but zero yards, zero TDs, and zero receptions means the usage is completely ineffective.
 rule13 = ctrl.Rule(
-    volume['high'] & yards['poor'] & receptions['low'] & td['none'],
+    volume['high'] & yards['poor'] & receptions['low'] & td['low'],
     recommendation['sit']
 )
 
 # Rule 14: The Ultra-Efficient, Low-Volume Ceiling (START)
 # Justification: Even with low volume, achieving elite yards and multiple TDs is a highly successful fantasy outcome that must result in a START recommendation.
 rule14 = ctrl.Rule(
-    volume['low'] & yards['elite'] & td['multiple'],
+    volume['low'] & yards['elite'] & td['high'],
     recommendation['start']
 )
 
 # Rule 15: The PPR Safety Net (High FLEX)
 # Justification: Low volume and average yards are normally a FLEX, but high receptions establishes a strong PPR floor, justifying a higher score.
 rule15 = ctrl.Rule(
-    volume['low'] & receptions['high'] & yards['average'] & td['none'],
+    volume['low'] & receptions['high'] & yards['average'] & td['low'],
     recommendation['flex']
 )
 
 # Rule 16: The Decent Floor, No Ceiling (Medium FLEX)
 # Justification: Average production across the board (medium volume, decent receptions, average yards) but no TD often represents the definition of a safe, standard FLEX play.
 rule16 = ctrl.Rule(
-    volume['medium'] & receptions['decent'] & yards['average'] & td['none'],
+    volume['medium'] & receptions['decent'] & yards['average'] & td['low'],
     recommendation['flex']
 )
 
 # Rule 17: The TD-Dependent Fluke (SIT/LOW FLEX)
 # Justification: A single TD can mask a lack of underlying production (low volume, poor yards). Score should be pulled down to a risky FLEX or SIT.
 rule17 = ctrl.Rule(
-    volume['low'] & yards['poor'] & receptions['low'] & td['one'],
+    volume['low'] & yards['poor'] & receptions['low'] & td['medium'],
     recommendation['sit']
 )
 
 # Rule 18: The Workhorse Floor with TD Ceiling (Safe START)
 # Justification: High volume combined with average yards and the crucial TD makes for a highly reliable fantasy START.
 rule18 = ctrl.Rule(
-    volume['high'] & yards['average'] & td['one'],
+    volume['high'] & yards['average'] & td['medium'],
     recommendation['start']
 )
 
 # Rule 19: The Pure Efficiency Floor (High FLEX)
 # Justification: Elite yards without the TD ceiling, combined with good volume, is a very strong FLEX play, but not an unquestionable START.
 rule19 = ctrl.Rule(
-    volume['medium'] & yards['elite'] & td['none'],
+    volume['medium'] & yards['elite'] & td['low'],
     recommendation['flex']
 )
 
@@ -796,9 +796,9 @@ def run_fuzzy_analysis(player_name_or_team: str, year: int):
 
         # Clamp values to the defined Universe of Discourse
         volume_input = min(max(stats['volume'], 0), 30)
-        yards_input = min(max(stats['yards'], 0), 150)
-        receptions_input = min(max(stats['receptions'], 0), 15)
-        td_input = min(max(stats['td'], 0), 3)
+        yards_input = min(max(stats['yards'], 0), 115)
+        receptions_input = min(max(stats['receptions'], 0), 10)
+        td_input = min(max(stats['td'], 0), 1.5)
 
         # @@@DEBUG Statements remove later
         # print(f"\n--- Crisp Inputs for {stats['name']} (Week {week}) ---")
@@ -842,7 +842,7 @@ def run_fuzzy_analysis(player_name_or_team: str, year: int):
 
 def convert_score_to_recommendation(score):
     """Converts the crisp score into a linguistic recommendation."""
-    if score >= 75:
+    if score >= 66:
         return "🔥 MUST START"
     elif score >= 45:
         return "🟢 FLEX / HIGH POTENTIAL START"
